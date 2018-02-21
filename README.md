@@ -9,11 +9,11 @@ Version: Tensorflow 1.5
 
 The following methods are implemented and can be runned jointly or separately
 
-Markup : *initialization
-         *Weight normalization
-         *weight normalization with mean only batch normalization
-         *batch normalization
-         *standard parametrization (without initialization)
+Markup : * initialization
+         * Weight normalization
+         * weight normalization with mean only batch normalization
+         * batch normalization
+         * standard parametrization (without initialization)
 
 
 Batch normalization cannot be runned jointly with mean only batch normalization or weight normalization together. However weight normalization can be runned separately, or weight-norm + mean only batch norm can be runned jointly. The code also contains the standard parametrization without initialization.
