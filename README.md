@@ -15,6 +15,12 @@ The following methods are implemented and can be runned jointly or separately
        Markup : * Batch normalization
        Markup : * Standard parametrization (without initialization)
 
+
+ Markup : * Bullet list
+              * Nested bullet
+                  * Sub-nested bullet etc
+          * Bullet list item 2
+
 Batch normalization cannot be runned jointly with mean only batch normalization or weight normalization together. However weight normalization can be runned separately, or weight-norm + mean only batch norm can be runned jointly. The code also contains the standard parametrization without initialization.
 
 The above methods can be defined in the run.sh bash script with the proper parameters set. One may also can add cuda visible devices to run on gpu.
