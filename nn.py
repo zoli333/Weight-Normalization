@@ -130,7 +130,7 @@ def dense(x, num_units, nonlinearity=None, init_scale=1., init=False,
             b = tf.get_variable('b', shape=[num_units], dtype=tf.float32,
                               initializer=tf.constant_initializer(0.), trainable=True)
         if use_mean_only_batch_normalization:
-            pop_mean = tf.get_variable('pop_mean',shape=[num_units], dtype=tf.float32, initializer=tf.zeros_initializer(),trainable=False)
+            pop_mean = tf.get_variable('meanOnlyBatchNormalization/pop_mean',shape=[num_units], dtype=tf.float32, initializer=tf.zeros_initializer(),trainable=False)
             
         if use_weight_normalization:
             g = tf.get_variable('g', shape=[num_units], dtype=tf.float32,
