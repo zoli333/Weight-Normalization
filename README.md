@@ -9,13 +9,13 @@ Version: Tensorflow 1.5
 
 The following methods are implemented and can be runned jointly or separately
 
--initialization
+*initialization
 
--Weight normalization
+*Weight normalization
 
--weight normalization with mean only batch normalization
+*weight normalization with mean only batch normalization
 
--batch normalization
+*batch normalization
 
 -standard parametrization (without initialization)
 
