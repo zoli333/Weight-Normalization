@@ -21,8 +21,7 @@ The above methods can be defined in the run.sh bash script with the proper param
 
 The run.sh file contains an example run of weight-normalization with initialization and with mean-only-batch-normalization. This was reached the best accuracy in the article. 
 
+To run the code:
 
-Running:
-
-   ./run.sh
+    ./run.sh
 
