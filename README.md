@@ -9,8 +9,8 @@ Version: Tensorflow 1.5
 
 The following methods are implemented and can be runned jointly or separately
 
-Markup : * initialization
-         * Weight normalization
+Markup : *initialization
+Markup : *Weight normalization
          * weight normalization with mean only batch normalization
          * batch normalization
          * standard parametrization (without initialization)
