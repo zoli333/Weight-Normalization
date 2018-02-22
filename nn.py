@@ -157,7 +157,7 @@ def dense(x, num_units, nonlinearity=None, init_scale=1., init=False,
             x = tf.matmul(x, V)
             x = batch_norm_impl(x,is_conv_out=False,deterministic=deterministic)
         else:
-            x = tf.nn.bias_add(tf.nn.conv2d(x,V,strides=[1,stride,stride,1],padding=padding),b)
+            x = tf.nn.bias_add(tf.matmul(x, V),b)
         
     
         # apply nonlinearity
