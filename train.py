@@ -46,7 +46,7 @@ num_epochs = FLAGS.num_epochs
 use_weight_normalization = convert_to_boolean(FLAGS.use_weight_normalization)
 use_batch_normalization = convert_to_boolean(FLAGS.use_batch_normalization)
 use_mean_only_batch_normalization = convert_to_boolean(FLAGS.use_mean_only_batch_normalization)
-print_out_variables = FLAGS.print_out_variables
+print_out_variables = convert_to_boolean(FLAGS.print_out_variables)
 
 print 'Weight-normalization used: ' + str(use_weight_normalization)
 print 'Batch-normalization used: ' + str(use_batch_normalization)
@@ -56,9 +56,6 @@ print 'Mean-only-batch-normalization used: ' + str(use_mean_only_batch_normaliza
 if (use_weight_normalization is True and use_batch_normalization is True) or (use_batch_normalization is True and use_mean_only_batch_normalization is True):
     print "Cannot use both!"
     exit (0)
-
-
-
 
 rng = np.random.RandomState(seed)
 tf.set_random_seed(seed)
@@ -80,7 +77,6 @@ model = tf.make_template('model',model_spec)
 x = tf.placeholder(tf.float32,shape=[batch_size,32,32,3])
 y = tf.placeholder(tf.int32,shape=[batch_size])
 x_init = tf.placeholder(tf.float32,shape=[init_batch_size,32,32,3])
-
 
 
 init_forward = model(x_init,keep_prob=0.5,deterministic=False, init=True, 
