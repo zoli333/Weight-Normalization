@@ -27,7 +27,7 @@ To run the code:
     ./run.sh
 
 
-Note: in the train.py code, after the initialization the samples are reshuffled (however in Tim Salimans' repository its not). This was an intutitive thing. When initializing with an arbitrary number of images and we're setting up the parameters g, b, and with this the weights itself, we hope we catch the training set's most important features. Then we reshuffle the training examples and with this the already initialized parameters (g,b), and doing forward and backward steps on another set of examples (this is the reshuffle). 
+Note: in the train.py code, after the initialization the samples are reshuffled. This was an intutitive thing. When initializing with an arbitrary number of images and we're setting up the parameters g, b, and with this the weights itself, we hope we catch the training set's most important features. Then we reshuffle the training examples and with this the already initialized parameters (g,b), and doing forward and backward steps on another set of examples (this is the reshuffle). 
 
 This way I wanted to force the neural network to go with the initialized parameters at the first step, which I hoped catches the important features of the training set (by setting the parameters g,b...), and then see what it can do when other, now reshuffled batch of images are coming. Or in other words, can the initialization part catch the most important features from the training set by setting the parameters to this batches of images, and train the parameters further with respect to the initialized parameters?
 Mathematically speaking: could the parameters be depend on x, so g(x),b(x),V(x) could this be learned?
