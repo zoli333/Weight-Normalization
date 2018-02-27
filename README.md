@@ -1,4 +1,4 @@
-# Weight-Normalization-Complete
+# Weight-Normalization
 
 This is a complete Tensorflow implementation of Weight Normalization:
 
