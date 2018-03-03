@@ -29,10 +29,9 @@ To run the code:
 
 Note: in the train.py code, after the initialization the samples are reshuffled. This was an intutitive thing. When initializing with an arbitrary number of images and we're setting up the parameters g, b, and with this the weights itself, we hope we catch the training set's most important features. Then I reshuffle the training examples, and then doing forward and backward steps (training phase) on another set of examples (this is the reshuffle). 
 
-This way I wanted to force the neural network to go with the initialized parameters at the first step, which I hoped catches the important features of the training set (by setting the parameters g,b...), and then see what it can do when other, now reshuffled batch of images are coming. Or in other words, can the initialization part catch the most important features from the training set by setting the parameters to these batches of images in the initialization pahse, and then training the parameters further with respect to the initialized parameters?
-Mathematically speaking: could the parameters be depend on x, so g(x),b(x),V(x) could this be learned?
+This way I wanted to force the neural network to go with the initialized parameters at the first step, which I hoped catches the important features of the training set (by setting the parameters g,b...), and then see what it can do when other, now reshuffled batch of images are coming. Or in other words, can the initialization part catch the most important features from the training set by setting the parameters to a batch of images (500) in the initialization phase, and then training the parameters further with respect to the initialized parameters?
 
 I haven't tested out this yet completely. But when I was running the code with Weight Normalization and with and without initialization when not reshuffling the data after initialization, I got the same losses (because of the seed was set, I could make a comparison between these two cases). But when I reshuffled the data after initialization the loss was smaller than before with initialization, and it seemed to me it learned faster this way.
 
-
+This code was written based of openai's PixelCnn source code (Tensorflow), and Tim Salimans' Weight normalization (Theano) code
 
