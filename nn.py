@@ -87,6 +87,7 @@ def conv2d(x, num_filters, filter_size=[3,3],  pad='SAME', stride=[1,1], nonline
                 x = tf.nn.conv2d(x, v_norm, strides=[1] + stride + [1],padding=pad)
                 m_init, v_init = tf.nn.moments(x, [0,1,2])
                 scale_init=init_scale/tf.sqrt(v_init + 1e-08)
+                # FIXME created but never run
                 g = g.assign(scale_init)
                 b = b.assign(-m_init*scale_init)
                 x = tf.reshape(scale_init,[1,1,1,num_filters])*(x-tf.reshape(m_init,[1,1,1,num_filters]))
@@ -140,6 +141,7 @@ def dense(x, num_units, nonlinearity=None, init_scale=1., init=False,
                 x = tf.matmul(x, v_norm)
                 m_init, v_init = tf.nn.moments(x, [0])
                 scale_init = init_scale/tf.sqrt(v_init + 1e-10)
+                # FIXME created but never run
                 g = g.assign(scale_init)
                 b = b.assign(-m_init * scale_init)
                 x = tf.reshape(scale_init,[1,num_units])*(x-tf.reshape(m_init,[1,num_units]))
