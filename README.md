@@ -1,5 +1,4 @@
 # Weight-Normalization
-![train_plot.png](https://github.com/zoli333/Weight-Normalization/blob/master/train_plot.png)
 
 This is a complete Pytorch implementation of Weight Normalization:
 
@@ -16,6 +15,13 @@ The following methods are implemented and can be runned jointly or separately
        - Weight normalization with mean only batch normalization
        - Weight normalization with mean only batch normalization (with initialization)
        - Batch normalization (without initialization)
+
+# Results
+
+![train_plot.png](https://github.com/zoli333/Weight-Normalization/blob/master/train_plot.png)
+
+![test_plot.png](https://github.com/zoli333/Weight-Normalization/blob/master/test_plot.png)
+
 
 References:
 
