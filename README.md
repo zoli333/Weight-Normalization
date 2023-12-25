@@ -22,9 +22,9 @@ The following methods are implemented and can be runned jointly or separately
 
 ![test_plot.png](https://github.com/zoli333/Weight-Normalization/blob/master/test_plot.png)
 
-The weight normalization methods without initialization converges the fastest along with batch normalization.
+The weight normalization methods without initialization converged the fastest along with batch normalization.
 However the best results achieved with weight normalization combined with mean only batch normalization (with initialization) as per the article.
-Overall, the models without initialization trains faster but the same models with initialization got the better accuracy.
+Overall, the models without initialization trained faster but the same models with initialization got the better accuracy.
 - The learning rate settings were much more stable during training using weight norm or mean only batchnorm (with weight norm) during training.
 - Also less overfitting occured with weight normalization or weight normalization with mean only batch normalization during training.
 
