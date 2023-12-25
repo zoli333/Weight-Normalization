@@ -9,7 +9,7 @@ Version: Pytorch 2.1.1+cu118
 
 The following methods are implemented and can be runned jointly or separately
 
-       - no normalization (default with learning rate 0.0003, others got unstable behaviours during training)
+       - no normalization (default with learning rate 0.0003, other learning rate settings got unstable behaviours during training)
        - Weight normalization with initialization
        - Weight normalization without initalization
        - Weight normalization with mean only batch normalization
