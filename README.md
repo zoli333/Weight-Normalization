@@ -1,6 +1,6 @@
 # Weight-Normalization
 
-This is a complete Tensorflow implementation of Weight Normalization:
+This is a complete Pytorch implementation of Weight Normalization:
 
 A Simple Reparameterization to Accelerate Training of Deep Neural Networks article
 https://arxiv.org/pdf/1602.07868.pdf
@@ -22,3 +22,9 @@ References:
 -  https://gist.github.com/rtqichen/b22a9c6bfc4f36e605a7b3ac1ab4122f
 -  https://pytorch.org/docs/stable/_modules/torch/nn/utils/weight_norm.html#weight_norm
 
+----------------------------------------
+gaussian noise layer taken from:
+# https://discuss.pytorch.org/t/writing-a-simple-gaussian-noise-layer-in-pytorch/4694/2
+
+NINLayer rewritten from (lasagne):
+# https://github.com/Lasagne/Lasagne/blob/master/lasagne/layers/dense.py#L127-L226
