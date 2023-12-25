@@ -1,5 +1,7 @@
 # Weight-Normalization
 
+[train_plot.png]
+
 This is a complete Pytorch implementation of Weight Normalization:
 
 A Simple Reparameterization to Accelerate Training of Deep Neural Networks article
