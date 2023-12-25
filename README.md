@@ -34,6 +34,13 @@ References:
 -  https://gist.github.com/rtqichen/b22a9c6bfc4f36e605a7b3ac1ab4122f
 -  https://pytorch.org/docs/stable/_modules/torch/nn/utils/weight_norm.html#weight_norm
 
+# Training
+Deterministic behaviour was kept during training, generating the same order of examples during training and if initialization was present then the initial batch
+of examples were deterministic during the initialization time.
+The training was done with the command below in google colab for 100 epochs, each model:
+
+!CUBLAS_WORKSPACE_CONFIG=:4096:8 python train.py
+
 ----------------------------------------
 gaussian noise layer taken from:
 # https://discuss.pytorch.org/t/writing-a-simple-gaussian-noise-layer-in-pytorch/4694/2
