@@ -1,6 +1,5 @@
 # Weight-Normalization
-
-[train_plot.png]
+![train_plot.png]
 
 This is a complete Pytorch implementation of Weight Normalization:
 
