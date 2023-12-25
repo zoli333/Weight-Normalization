@@ -1,6 +1,6 @@
 # Weight-Normalization
 
-This is a complete Tensorflow implementation of Weight Normalization:
+This is a complete Pytorch implementation of Weight Normalization:
 
 A Simple Reparameterization to Accelerate Training of Deep Neural Networks article
 https://arxiv.org/pdf/1602.07868.pdf
