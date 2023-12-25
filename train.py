@@ -1,186 +1,154 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader
-import torchvision
-import torchvision.transforms as transforms
-from numpy.random import MT19937
-from numpy.random import RandomState, SeedSequence
-import os
-import time
+
 import numpy as np
-import random
-import torch.backends.cudnn
-from model import Model
+import tensorflow as tf
+from model import model_spec
+import utils
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+def convert_to_boolean(flag):
+    if flag==1:
+        return True
+    elif flag==0:
+        return False
+    
 
+def print_out_all_variables_AND_all_trainable_variables(sess):
+    all_variables = tf.all_variables()
+    all_variables_vars = sess.run(all_variables)
+    for var, val in zip(all_variables, all_variables_vars):
+        print(var.name) 
+    
+    print "\n"
+    
+    trainable_variables = tf.trainable_variables()
+    trainable_variables_vars = sess.run(tf.trainable_variables())
+    for var, val in zip(trainable_variables, trainable_variables_vars):
+        print(var.name) 
+    
 
-def set_determenistic_mode(SEED, disable_cudnn):
-    # https://darinabal.medium.com/deep-learning-reproducible-results-using-pytorch-42034da5ad7
-    # https://vandurajan91.medium.com/random-seeds-and-reproducible-results-in-pytorch-211620301eba
-    torch.manual_seed(SEED)                       # Seed the RNG for all devices (both CPU and CUDA).
-    random.seed(SEED)                             # Set python seed for custom operators.
-    rs = RandomState(MT19937(SeedSequence(SEED)))  # If any of the libraries or code rely on NumPy seed the global NumPy RNG.
-    np.random.seed(SEED)
-    torch.cuda.manual_seed_all(SEED)              # If you are using multi-GPU. In case of one GPU, you can use # torch.cuda.manual_seed(SEED).
+FLAGS = tf.app.flags.FLAGS
 
-    if not disable_cudnn:
-        torch.backends.cudnn.benchmark = False    # Causes cuDNN to deterministically select an algorithm,
-                                                 # possibly at the cost of reduced performance
-                                                 # (the algorithm itself may be nondeterministic).
-        torch.backends.cudnn.deterministic = True # Causes cuDNN to use a deterministic convolution algorithm,
-                                                  # but may slow down performance.
-                                                  # It will not guarantee that your training process is deterministic
-                                                  # if you are using other libraries that may use nondeterministic algorithms
-    else:
-        torch.backends.cudnn.enabled = False # Controls whether cuDNN is enabled or not.
-                                         # If you want to enable cuDNN, set it to True.
+tf.app.flags.DEFINE_integer('seed', 3213123, "Seed value for reproductibility")
+tf.app.flags.DEFINE_integer('init_batch_size', 500, "Number of examples for initialization")
+tf.app.flags.DEFINE_integer('batch_size', 100, "Batch size for training")
+tf.app.flags.DEFINE_integer('num_epochs', 200, "Number of epochs for training")
 
-
-set_determenistic_mode(12345, False)
-
-
-def seed_worker(worker_id):
-    worker_seed = torch.initial_seed() % 2**32
-    np.random.seed(worker_seed)
-    random.seed(worker_seed)
-
-
-train_generator = torch.Generator()
-train_generator.manual_seed(0)
-
-sample_batch_generator = torch.Generator()
-sample_batch_generator.manual_seed(1)
+tf.app.flags.DEFINE_integer('use_weight_normalization', 1, "if weightnorm is used")
+tf.app.flags.DEFINE_integer('use_batch_normalization', 0, "if batchnorm is used")
+tf.app.flags.DEFINE_integer('use_mean_only_batch_normalization', 1, "if mean only batch norm is used")
+tf.app.flags.DEFINE_integer('print_out_variables', 0, "Whether to print out trainable and other variables, for debugging")
 
 
-transform = transforms.Compose(
-    [transforms.ToTensor(),
-     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
-)
+seed = FLAGS.seed
+init_batch_size = FLAGS.init_batch_size
+batch_size = FLAGS.batch_size
+num_epochs = FLAGS.num_epochs
 
-batch_size = 100
-sample_batch_size = 500
-learning_rate = 0.003
+use_weight_normalization = convert_to_boolean(FLAGS.use_weight_normalization)
+use_batch_normalization = convert_to_boolean(FLAGS.use_batch_normalization)
+use_mean_only_batch_normalization = convert_to_boolean(FLAGS.use_mean_only_batch_normalization)
+print_out_variables = convert_to_boolean(FLAGS.print_out_variables)
 
-
-trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
-                                        download=True, transform=transform)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
-                                          shuffle=True, worker_init_fn=seed_worker, generator=train_generator)
-
-testset = torchvision.datasets.CIFAR10(root='./data', train=False,
-                                       download=True, transform=transform)
-testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
-                                         shuffle=False)
-
-nr_batches_train = float(trainset.data.shape[0]) / batch_size
-
-classes = ('plane', 'car', 'bird', 'cat',
-           'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+print 'Weight-normalization used: ' + str(use_weight_normalization)
+print 'Batch-normalization used: ' + str(use_batch_normalization)
+print 'Mean-only-batch-normalization used: ' + str(use_mean_only_batch_normalization)
 
 
-normalizer_types = ['no_norm', 'weight', 'weight', 'batch_norm', 'weight_mean_only_batch_norm', 'weight_mean_only_batch_norm']
-inits = ['gaussian', 'gaussian', 'gaussian_datadep', 'gaussian', 'gaussian', 'gaussian_datadep']
-lrs = [0.0003, 0.003, 0.003, 0.003, 0.003, 0.003]
-names = ['no_norm', 'weight_norm', 'weight_norm_with_init', 'batch_norm', 'weight_norm_and_mean_only_batch_norm', 'weight_norm_and_mean_only_batch_norm_with_init']
-sample_batch_sizes = [0, 0, 500, 0, 0, 500]
-is_skipped = [1, 1, 1, 1, 1, 1]
+if (use_weight_normalization is True and use_batch_normalization is True) or (use_batch_normalization is True and use_mean_only_batch_normalization is True):
+    print "Cannot use both!"
+    exit (0)
+
+rng = np.random.RandomState(seed)
+tf.set_random_seed(seed)
+
+trainx_white, testx_white, trainy, testy = utils.load_data()
+trainx_white = np.transpose(trainx_white,(0,2,3,1))  # (N,3,32,32) -> (N,32,32,3)
+testx_white = np.transpose(testx_white,(0,2,3,1)) # (N,3,32,32) -> (N,32,32,3)
+trainy=trainy.astype(np.int32)
+testy=testy.astype(np.int32)
 
 
-assert len(normalizer_types) == len(inits) == len(lrs) == len(names) == len(sample_batch_sizes) == len(is_skipped)
+nr_batches_train = int(trainx_white.shape[0]/batch_size)
+nr_batches_test = int(testx_white.shape[0]/batch_size)
 
 
-def test(input_model):
-    # get final accuracy
-    correct = 0
-    total = 0
-    input_model.eval()
-    # since we're not training, we don't need to calculate the gradients for our outputs
-    with torch.no_grad():
-        for data in testloader:
-            images, labels = data
-            images = images.to(device)
-            labels = labels.to(device)
-            # calculate outputs by running images through the network
-            outputs = input_model(images)
-            # the class with the highest energy is what we choose as prediction
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-    print(f'Accuracy of the network on the 10000 test images: {100. * float(correct) / total} %')
-    input_model.train()
-    return correct, total
+model = tf.make_template('model',model_spec)
 
 
-if __name__ == '__main__':
-    for norm_type_idx, norm_type in enumerate(normalizer_types):
-        if is_skipped[norm_type_idx] is None:
-            continue
+x = tf.placeholder(tf.float32,shape=[batch_size,32,32,3])
+y = tf.placeholder(tf.int32,shape=[batch_size])
+x_init = tf.placeholder(tf.float32,shape=[init_batch_size,32,32,3])
 
-        model = None
-        sample_batch = None
 
-        begin_time = time.time()
+init_forward = model(x_init,keep_prob=0.5,deterministic=False, init=True, 
+                        use_weight_normalization=use_weight_normalization,
+                        use_batch_normalization=use_batch_normalization, 
+                        use_mean_only_batch_normalization=use_mean_only_batch_normalization) # initialization phase
 
-        sample_batch_size = sample_batch_sizes[norm_type_idx]
 
-        if sample_batch_size != 0:
-            sample_batch_generator.manual_seed(123123141)
-            samplebatchloader = torch.utils.data.DataLoader(trainset, batch_size=sample_batch_size,
-                                                            shuffle=True, worker_init_fn=seed_worker,
-                                                            generator=sample_batch_generator)
-            dataiter = iter(samplebatchloader)
-            sample_batch, _ = next(dataiter)
-            sample_batch = sample_batch.to(device)
-        else:
-            sample_batch = None
+out = model(x,keep_prob=0.5,deterministic=False,init=False,
+                        use_weight_normalization=use_weight_normalization,
+                        use_batch_normalization=use_batch_normalization, 
+                        use_mean_only_batch_normalization=use_mean_only_batch_normalization) # training phase
+                        
+cross_entropy = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+      labels=y, logits=out, name='cross_entropy'))
 
-        learning_rate = lrs[norm_type_idx]
-        model = Model(normalizer=norm_type, init=inits[norm_type_idx], sample_batch=sample_batch).to(device)
 
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-        exp_dir = names[norm_type_idx] + "_" + "{}".format(learning_rate).replace('.', 'p') \
-                  + '_sbs' + str(sample_batch_size) + '_' + inits[norm_type_idx]
+test_out=model(x,keep_prob=0.5,deterministic=True,init=False,
+                        use_weight_normalization=use_weight_normalization,
+                        use_batch_normalization=use_batch_normalization, 
+                        use_mean_only_batch_normalization=use_mean_only_batch_normalization) # testing phase
+                        
 
-        os.makedirs(exp_dir, exist_ok=True)
+argmax=tf.argmax(test_out,axis=1,output_type=tf.int32)
+not_eq=tf.cast(tf.not_equal(argmax,y),tf.float32)
+test_error = tf.reduce_mean(not_eq)
 
-        train_results_file = open(exp_dir + '/train_results.csv', 'w')
-        test_results_file = open(exp_dir + '/test_results.csv', 'w')
 
-        for epoch in range(100):  # loop over the dataset multiple times
-            # set the generator seed
-            train_generator.manual_seed(123456789 + epoch)
-            running_loss = 0
-            for i, data in enumerate(trainloader, 0):
-                # get the inputs; data is a list of [inputs, labels]
-                inputs, labels = data
-                inputs = inputs.to(device)
-                labels = labels.to(device)
+optimizer = tf.train.AdamOptimizer(0.001).minimize(cross_entropy)
 
-                # zero the parameter gradients
-                optimizer.zero_grad()
+init_global_variables = tf.global_variables_initializer()
 
-                # forward + backward + optimize
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-                # print statistics
-                running_loss += loss.item()
 
-            train_err = running_loss / nr_batches_train
-            print(f'{epoch + 1}, {train_err:.3f}')
-            train_results_file.write('%d, %.3f\n' % (epoch + 1, train_err))
-            train_results_file.flush()
+with tf.Session() as sess:
+    
+    sess.run(init_global_variables)
+    
+    if print_out_variables:
+        print_out_all_variables_AND_all_trainable_variables(sess)
+    
+    for epoch in range(num_epochs):
+        
+         # permute the training data
+        inds = rng.permutation(trainx_white.shape[0])
+        trainx_white = trainx_white[inds]
+        trainy = trainy[inds]
+        
+        if epoch==0:
+            sess.run(init_forward,feed_dict={x_init: trainx_white[:init_batch_size]})
+            # reshuffle the training data
+            inds = rng.permutation(trainx_white.shape[0])
+            trainx_white = trainx_white[inds]
+            trainy = trainy[inds]
+            
+        
+        train_err=0.
+        for t in range(nr_batches_train):
+            feed_dict = {x: trainx_white[t*batch_size:(t+1)*batch_size], y: trainy[t*batch_size:(t+1)*batch_size]}
+            l,_=sess.run([cross_entropy,optimizer], feed_dict=feed_dict)
+            train_err+=l
+        train_err/=nr_batches_train
+        print train_err
+        
+        test_err=0.
+        for t in range(nr_batches_test):
+            feed_dict = {x: testx_white[t*batch_size:(t+1)*batch_size], y: testy[t*batch_size:(t+1)*batch_size]}
+            test_error_out=sess.run(test_error, feed_dict=feed_dict)
+            test_err+=test_error_out
+        test_err /= nr_batches_test
+        print test_err
+        
+    
 
-            if epoch in (0, 9, 19, 29, 39, 49, 59, 69, 79, 99):
-                current_time = time.time()
-                correct, total = test(model)
-                test_err = 100. * correct / total
-                test_results_file.write('%d, %d, %.5f\n' % (epoch + 1, current_time - begin_time, test_err))
-                test_results_file.flush()
 
-        print('Finished Training')
