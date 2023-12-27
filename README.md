@@ -29,11 +29,8 @@ Overall, the models without initialization trained/optimized faster but the same
 - The learning rate settings were much more stable during training using weight norm alone or mean only batchnorm combined with weight norm during training.
 - Also less overfitting occured with weight normalization or weight normalization with mean only batch normalization during training.
 
-References:
-
--  https://github.com/victorcampos7/weightnorm-init/tree/master
--  https://gist.github.com/rtqichen/b22a9c6bfc4f36e605a7b3ac1ab4122f
--  https://pytorch.org/docs/stable/_modules/torch/nn/utils/weight_norm.html#weight_norm
+Note: Mean only batch normalization without weight normalization omitted from the results since it became unstable at learning rate 0.003 similarly to the reference model (the reference model got unstable with learning rate 0.003 as well).
+In this experiment mean only batch normalization without weight normalization applied before this layer like: MeanOnlyBatchNormLayer(...nn.Conv2d()...) for all layers
 
 # Model
 The model was identical with the article's model. Except ZCA whitening was not applied just a default transform at the beginning, moving the image pixel range to [-1, 1]
@@ -45,8 +42,15 @@ The training was done with the command below in google colab for 100 epochs, eac
 
 !CUBLAS_WORKSPACE_CONFIG=:4096:8 python train.py
 
+# References:
+
+-  https://github.com/victorcampos7/weightnorm-init/tree/master
+-  https://gist.github.com/rtqichen/b22a9c6bfc4f36e605a7b3ac1ab4122f
+-  https://pytorch.org/docs/stable/_modules/torch/nn/utils/weight_norm.html#weight_norm
+-  https://github.com/TimSalimans/weight_norm
+-  https://github.com/openai/weightnorm
 ----------------------------------------
-gaussian noise layer taken from:
+Gaussian noise layer taken from:
 - https://discuss.pytorch.org/t/writing-a-simple-gaussian-noise-layer-in-pytorch/4694/2
 
 NINLayer rewritten from (lasagne):
