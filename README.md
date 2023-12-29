@@ -26,19 +26,19 @@ The "no normalization" model was trained with learning rate 0.0003, learning rat
 The weight normalization methods without initialization converged the fastest along with batch normalization.
 However the best results achieved with weight normalization combined with mean only batch normalization and with initialization as per the article.
 Overall, the models without initialization trained/optimized faster but the same models with initialization got the better accuracy.
-- The learning rate settings were much more stable during training using weight norm alone or mean only batchnorm combined with weight norm during training.
-- Also less overfitting occured with weight normalization or weight normalization with mean only batch normalization during training.
+- The training with weight normalization alone or mean only batchnorm combined with weight normalization were stable for different learning rates.
+- Also less overfitting occured with weight normalization or weight normalization combined with mean only batch normalization during training.
 
 Note: Mean only batch normalization without weight normalization omitted from the results since it became unstable at learning rate 0.003 similarly to the reference model (the reference model got unstable with learning rate 0.003 as well).
 In this experiment mean only batch normalization without weight normalization applied before this layer like: MeanOnlyBatchNormLayer(...nn.Conv2d()...) for all layers
 
 # Model
-The model was identical with the article's model. Except ZCA whitening was not applied just a default transform at the beginning, moving the image pixel range to [-1, 1]
+The model was identical with the article's model, except ZCA whitening was not applied just a default transform at the beginning, moving the image pixel range to [-1, 1]
 
 # Training
-Deterministic behaviour was kept during training, generating the same order of examples during training and if initialization was present then the initial batch
+The deterministic behaviour was kept during training, generating the same examples in the same order during training and if initialization was present then the initial batch
 of examples were deterministic during the initialization time.
-The training was done with the command below in google colab for 100 epochs, each model:
+The training was done with the command below in google colab for 100 epochs for each model:
 
 !CUBLAS_WORKSPACE_CONFIG=:4096:8 python train.py
 
