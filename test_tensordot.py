@@ -12,7 +12,7 @@ import numpy as np
 input = torch.randn((5, 2, 3, 3))
 # NinLayer's weight shape (out_channels, in_features)
 W = torch.arange(20.).reshape(10, 2)
-# reduce dim along in_features axes
+# reduce dimensions along input's out_features axis and the weight matrix's in_features axis
 c = torch.tensordot(W, input, dims=([1], [1]))
 print(c.shape)
 x = np.array(input)
@@ -49,7 +49,7 @@ print(out.shape)
 input = out
 # second NinLayer's weight shape (out_channels, in_features)
 W = torch.randn((192, 10))
-# reduce dim along in_features axes
+# reduce dimensions along input's out_features axis and the weight matrix's in_features axis
 c = torch.tensordot(W, input, dims=([1], [1]))
 print(c.shape)
 w = np.array(W)
