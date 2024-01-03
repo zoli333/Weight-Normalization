@@ -80,12 +80,12 @@ classes = ('plane', 'car', 'bird', 'cat',
            'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
 
-normalizer_types = ['no_norm', 'weight', 'weight', 'batch_norm', 'weight_mean_only_batch_norm', 'weight_mean_only_batch_norm', 'mean_only_batch_norm']
-inits = ['gaussian', 'gaussian', 'gaussian_datadep', 'gaussian', 'gaussian', 'gaussian_datadep', 'gaussian']
-lrs = [0.0003, 0.003, 0.003, 0.003, 0.003, 0.003, 0.003]
-names = ['no_norm', 'weight_norm', 'weight_norm_with_init', 'batch_norm', 'weight_norm_and_mean_only_batch_norm', 'weight_norm_and_mean_only_batch_norm_with_init', 'mean_only_batch_norm']
-sample_batch_sizes = [0, 0, 500, 0, 0, 500, 0]
-is_skipped = [None, None, None, None, 1, 1, 1]
+normalizer_types = ['no_norm', 'weight', 'weight', 'batch_norm', 'weight_mean_only_batch_norm', 'weight_mean_only_batch_norm']
+inits = ['gaussian', 'gaussian', 'gaussian_datadep', 'gaussian', 'gaussian', 'gaussian_datadep']
+lrs = [0.0003, 0.003, 0.003, 0.003, 0.003, 0.003]
+names = ['no_norm', 'weight_norm', 'weight_norm_with_init', 'batch_norm', 'weight_norm_and_mean_only_batch_norm', 'weight_norm_and_mean_only_batch_norm_with_init']
+sample_batch_sizes = [0, 0, 500, 0, 0, 500]
+is_skipped = [1, 1, 1, 1, 1, 1]
 
 
 assert len(normalizer_types) == len(inits) == len(lrs) == len(names) == len(sample_batch_sizes) == len(is_skipped)
