@@ -22,8 +22,8 @@ The following methods are implemented and can be runned jointly or separately
 
 ![test_plot.png](https://github.com/zoli333/Weight-Normalization/blob/master/test_plot.png)
 
-The "no normalization" model was trained with learning rate 0.003 got unstable behaviours during training.
-Learning rate was reduced to 0.0003 to train "no normalization" model.
+The "no normalization" model, trained with learning rate 0.003 got unstable behaviours during training.
+For this the learning rate was reduced to 0.0003 to train "no normalization" model.
 
 The weight normalization methods without initialization converged the fastest along with batch normalization.
 However the best results achieved with weight normalization combined with mean only batch normalization and with initialization as per the article.
@@ -35,7 +35,7 @@ Note: Mean only batch normalization without weight normalization omitted from th
 In this experiment mean only batch normalization without weight normalization applied before this layer like: MeanOnlyBatchNormLayer(...nn.Conv2d()...) for all layers that had trainable parameters: Linear, Conv2d, NINLayer.
 
 # Model
-The model was identical with the article's model, except ZCA whitening was not applied just a default transform at the beginning, moving the image pixel range to [-1, 1]
+The model was identical with the article's model, except ZCA whitening was not applied, just a default transform at the beginning by moving the image pixel range to [-1, 1]
 
 # Training
 The deterministic behaviour was kept during training, generating the same examples in the same order during training and if initialization was present then the initial batch
