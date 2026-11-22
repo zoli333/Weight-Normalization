@@ -41,7 +41,7 @@ def test_weight_norm_reproduces_the_original_layer_at_init():
 def test_weight_norm_gradients_reach_g_and_v():
     wn = WeightNormLayer(nn.Linear(5, 3))
     wn(torch.randn(4, 5)).sum().backward()
-    assert wn.module.g.grad is not None and wn.module.v.grad is not None
+    assert wn.module.g.grad is not None and wn.module.g.grad is not None
 
 
 def test_mean_only_bn_train_output_is_centered():
@@ -186,6 +186,16 @@ def test_whole_model_can_be_deep_copied():
     clone = copy.deepcopy(model)
     x = torch.randn(4, 3, 32, 32).to(device)
     assert torch.allclose(model(x), clone(x), atol=1e-5)
+
+
+def test_plain_init_of_the_output_layer():
+    sample = torch.randn(16, 3, 32, 32).to(device)
+    model = Model('weight', 'gaussian_datadep', sample_batch=sample, datadep_last_layer=False)
+    last = model.model[-1]  # the output layer: no activation after it
+    g = last.module.g.detach().flatten()
+    v_norm = last.module.v.detach().reshape(10, -1).norm(dim=1)
+    assert torch.allclose(g, v_norm, atol=1e-5)  # plain WN init: g = ||v||
+    assert last.module.bias.abs().sum().item() == 0.0
 
 
 def test_datadep_init_without_weight_norm_is_rejected():

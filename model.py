@@ -3,13 +3,14 @@ import torch
 import torch.nn as nn
 from layers import WeightNormLayer, MeanOnlyBatchNormLayer, GaussianNoiseLayer, GlobalAvgPool2d, NINLayer
 
-#https://programming-review.com/pytorch/hooks
-#https://arxiv.org/pdf/1906.02341.pdf
-#https://github.com/victorcampos7/weightnorm-init/tree/master
+# https://programming-review.com/pytorch/hooks
+# https://arxiv.org/pdf/1906.02341.pdf
+# https://github.com/victorcampos7/weightnorm-init/tree/master
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 EPS = 1e-6  # guards the division by sigma in the data-dependent init (dead units)
+
 
 def make_layers(noise_mode='additive'):
     """Fresh (uninitialized) layer list of the CIFAR-10 model of the paper (appendix)."""
@@ -37,6 +38,7 @@ def make_layers(noise_mode='additive'):
         nn.Linear(192, 10)
     ]
 
+
 def _channel_stats(y):
     """Per-output-unit mean and (biased) std of pre-activations, over batch and spatial dims."""
     reduce_dims = [d for d in range(y.dim()) if d != 1]
@@ -58,26 +60,18 @@ def data_dependent_weight_norm_g_init(wn_layer, sample_batch):
         7) Return the layer and the pre-activations, so that we can propagate the batch to the next layer
     """
     with torch.no_grad():
-        root  = wn_layer.module
+        root = wn_layer.module
 
-        # Set g=1
         root.g.fill_(1.0)
-
-        # Set b=0
         root.bias.zero_()
 
-        # Forward pass
         y = wn_layer(sample_batch)
-
-        # Compute mean and std of pre-activations
         mu, sigma = _channel_stats(y)
 
-        # Initialize parameters as in [Salimans & Kingma 2016] Eq (6)
         # Eq (6) of the paper; in-place copies keep the Parameter objects (and their registration) intact
         root.g.copy_((1.0 / sigma).view_as(root.g))
         root.bias.copy_(-mu / sigma)
 
-        # Re-compute pre-activations with properly normalized layer
         output_norm = wn_layer(sample_batch)
     return wn_layer, output_norm
 
@@ -91,30 +85,20 @@ def data_dependent_mean_only_batch_norm_g_init(mn_bn_layer, sample_batch):
         4) Re-compute the output and return it, so that the batch can be propagated to the next layer
     The bias stays 0: the layer's mean subtraction already centers the output.
     """
-    # mn_bn_layer -> MeanOnlyBatchNormLayer(WeightNormLayer((..nn.Conv2d..))
     if not isinstance(mn_bn_layer.module, WeightNormLayer):
         raise ValueError('Unsupported module:', mn_bn_layer.module)
 
     with torch.no_grad():
         root = mn_bn_layer.module.module
 
-        # Set b=0
         mn_bn_layer.bias.zero_()
-
-        # Set g=1
         root.g.fill_(1.0)
 
-        # Forward pass
-        # y = v*x/||v|| - mu (+ b)
         y = mn_bn_layer(sample_batch)
-
-        # Compute std of pre-activations
         _, sigma = _channel_stats(y)
 
-        # Initialize parameters as in [Salimans & Kingma 2016] Eq (6)
         root.g.copy_((1.0 / sigma).view_as(root.g))
 
-        # Re-compute pre-activations with properly normalized layer
         output_norm = mn_bn_layer(sample_batch)
     return mn_bn_layer, output_norm
 
@@ -168,10 +152,12 @@ class Model(nn.Module):
     noise_mode: 'additive' (as in the paper) | 'relative' (the old behaviour of this repo)
     init_mode:  'train' | 'eval' -- whether noise/dropout are active while the sample batch is propagated
                 through the net during the data-dependent init.
+    datadep_last_layer: False -> the output (logits) layer gets the plain weight-norm init (g = ||v||, b = 0)
+                instead of the data-dependent one (which makes its g large, ~8, and the logits unit-variance).
     """
 
     def __init__(self, normalizer='no_norm', init='gaussian', sample_batch=None,
-                 noise_mode='additive', init_mode='train'):
+                 noise_mode='additive', init_mode='train', datadep_last_layer=True):
         super().__init__()
         if init_mode not in ('train', 'eval'):
             raise ValueError('Unsupported init_mode:', init_mode)
@@ -183,7 +169,10 @@ class Model(nn.Module):
 
         for layer_idx, layer in enumerate(raw_layers):
             if isinstance(layer, (nn.Conv2d, nn.Linear, NINLayer)):
-                layer, x_out = init_layer_maybe_normalize(layer, normalizer, init, x)
+                layer_init = init
+                if layer_idx == last_layer_index and not datadep_last_layer:
+                    layer_init = 'gaussian'
+                layer, x_out = init_layer_maybe_normalize(layer, normalizer, layer_init, x)
 
                 if isinstance(layer, tuple):
                     layer_list.extend(layer)
@@ -213,10 +202,3 @@ class Model(nn.Module):
 
     def forward(self, x):
         return self.model(x)
-
-
-
-
-
-
-

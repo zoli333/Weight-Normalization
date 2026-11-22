@@ -1,5 +1,4 @@
 import os
-
 # Must be set before CUDA is initialized (needed for deterministic cuBLAS); no need to pass it on the command line anymore.
 os.environ.setdefault('CUBLAS_WORKSPACE_CONFIG', ':4096:8')
 
@@ -46,10 +45,12 @@ def set_deterministic_mode(seed):
     torch.backends.cudnn.deterministic = True
     torch.use_deterministic_algorithms(True, warn_only=True)
 
+
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2 ** 32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
+
 
 def get_datasets(root, augment=True):
     """Returns (trainset, trainset_plain, testset).
@@ -71,13 +72,15 @@ def get_datasets(root, augment=True):
     testset = torchvision.datasets.CIFAR10(root=root, train=False, download=True, transform=plain_tf)
     return trainset, trainset_plain, testset
 
+
 def make_sample_batch(trainset_plain, size, seed):
     g = torch.Generator()
     g.manual_seed(1000 + seed)
     idx = torch.randperm(len(trainset_plain), generator=g)[:size].tolist()
     return torch.stack([trainset_plain[i][0] for i in idx]).to(device)
 
-def build_model(cfg, seed, trainset_plain, noise_mode='additive', init_mode='train'):
+
+def build_model(cfg, seed, trainset_plain, noise_mode='additive', init_mode='train', datadep_last_layer=True):
     # Re-seed right before the model is created: the initial weights then depend only on `seed`,
     # not on how many models were trained before in the same process.
     set_deterministic_mode(seed)
@@ -85,13 +88,22 @@ def build_model(cfg, seed, trainset_plain, noise_mode='additive', init_mode='tra
     if cfg['sample_batch_size'] > 0:
         sample_batch = make_sample_batch(trainset_plain, cfg['sample_batch_size'], seed)
     return Model(normalizer=cfg['normalizer'], init=cfg['init'], sample_batch=sample_batch,
-                 noise_mode=noise_mode, init_mode=init_mode).to(device)
+                 noise_mode=noise_mode, init_mode=init_mode, datadep_last_layer=datadep_last_layer).to(device)
+
 
 def lr_factor(epoch, epochs, decay_start):
     """Constant until decay_start, then linear decay towards 0 (as in the paper: second half of training)."""
     if epoch < decay_start:
         return 1.0
     return max(0.0, (epochs - epoch) / (epochs - decay_start))
+
+
+def warmup_factor(step, warmup_steps):
+    """Linear lr warm-up over the first `warmup_steps` optimizer steps (0 = no warm-up)."""
+    if warmup_steps <= 0:
+        return 1.0
+    return min(1.0, (step + 1) / warmup_steps)
+
 
 @torch.no_grad()
 def evaluate(model, loader):
@@ -121,16 +133,20 @@ def run_experiment(name, cfg, seed, args, datasets):
     for marker in ('DONE', 'DIVERGED'):
         (run_dir / marker).unlink(missing_ok=True)
 
-    model = build_model(cfg, seed, trainset_plain, noise_mode=args.noise, init_mode=args.init_mode)
+    model = build_model(cfg, seed, trainset_plain, noise_mode=args.noise, init_mode=args.init_mode,
+                        datadep_last_layer=(args.init_last_layer == 'data'))
     optimizer = optim.Adam(model.parameters(), lr=lr)
     decay_start = args.epochs if args.lr_decay == 'none' else (
         args.decay_start if args.decay_start is not None else args.epochs // 2)
-    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda ep: lr_factor(ep, args.epochs, decay_start))
-
     shuffle_generator = torch.Generator()
     loader_kwargs = dict(num_workers=args.workers, pin_memory=(device.type == 'cuda'))
     trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, generator=shuffle_generator,
                              worker_init_fn=seed_worker, **loader_kwargs)
+    steps_per_epoch = len(trainloader)
+    # the scheduler is stepped after every optimizer step: warm-up (steps) x linear decay (fractional epochs)
+    scheduler = optim.lr_scheduler.LambdaLR(
+        optimizer, lambda step: warmup_factor(step, args.warmup_steps)
+        * lr_factor(step / steps_per_epoch, args.epochs, decay_start))
     train_eval_loader = DataLoader(trainset_plain, batch_size=500, shuffle=False, **loader_kwargs)
     testloader = DataLoader(testset, batch_size=500, shuffle=False, **loader_kwargs)
 
@@ -148,6 +164,7 @@ def run_experiment(name, cfg, seed, args, datasets):
         for epoch in range(args.epochs):
             shuffle_generator.manual_seed(seed * 1_000_003 + epoch)  # same example order for every method
             model.train()
+            epoch_lr = optimizer.param_groups[0]['lr']
             running_loss = torch.zeros((), device=device)
             for inputs, labels in trainloader:
                 inputs = inputs.to(device, non_blocking=True)
@@ -156,11 +173,11 @@ def run_experiment(name, cfg, seed, args, datasets):
                 loss = F.cross_entropy(model(inputs), labels)
                 loss.backward()
                 optimizer.step()
+                scheduler.step()
                 running_loss += loss.detach()
 
             train_loss = running_loss.item() / len(trainloader)  # noisy: measured with noise/dropout/augmentation on
-            current_lr = optimizer.param_groups[0]['lr']
-            scheduler.step()
+            current_lr = epoch_lr  # lr at the first step of this epoch
 
             row = dict.fromkeys(CSV_FIELDS, '')
             row.update(epoch=epoch + 1, lr=current_lr, train_loss_running=train_loss,
@@ -200,6 +217,10 @@ def parse_args():
     p.add_argument('--lr-decay', choices=['linear', 'none'], default='linear',
                    help='linear: constant lr, then linear decay to ~0 (default); none: constant lr')
     p.add_argument('--decay-start', type=int, default=None, help='first epoch of the decay (default: epochs // 2)')
+    p.add_argument('--warmup-steps', type=int, default=0,
+                   help='linear lr warm-up over the first N optimizer steps (one epoch = 500 steps); default: none')
+    p.add_argument('--init-last-layer', choices=['data', 'plain'], default='data',
+                   help="data-dependent init for the output layer too ('data', as in the paper) or plain WN init")
     p.add_argument('--batch-size', type=int, default=100)
     p.add_argument('--eval-every', type=int, default=5, help='evaluate every N epochs (plus epoch 1 and the last)')
     p.add_argument('--no-augment', action='store_true', help='disable random translation + horizontal flip')

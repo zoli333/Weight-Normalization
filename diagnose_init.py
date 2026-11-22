@@ -11,6 +11,8 @@ Things worth comparing (each one is a separate run):
     python diagnose_init.py --method weight_norm_with_init --init-mode eval     # no noise/dropout during the init
     python diagnose_init.py --method weight_norm_with_init --lr 0.001           # smaller Adam steps
     python diagnose_init.py --method weight_norm                                # reference without init
+    python diagnose_init.py --method weight_norm_with_init --warmup-steps 200   # lr warm-up
+    python diagnose_init.py --method weight_norm_with_init --init-last-layer plain  # no data-dep init on the logits layer
 """
 import argparse
 
@@ -21,7 +23,7 @@ from torch.utils.data import DataLoader
 
 from layers import WeightNormLayer, MeanOnlyBatchNormLayer, NINLayer
 from model import device
-from train import METHODS, get_datasets, build_model
+from train import METHODS, get_datasets, build_model, warmup_factor
 
 REPORTED = (MeanOnlyBatchNormLayer, WeightNormLayer, nn.Conv2d, nn.Linear, NINLayer, nn.BatchNorm1d, nn.BatchNorm2d)
 
@@ -69,6 +71,8 @@ def main():
     p.add_argument('--lr', type=float, default=None)
     p.add_argument('--steps', type=int, default=300)
     p.add_argument('--init-mode', choices=['train', 'eval'], default='train')
+    p.add_argument('--warmup-steps', type=int, default=0)
+    p.add_argument('--init-last-layer', choices=['data', 'plain'], default='data')
     p.add_argument('--noise', choices=['additive', 'relative'], default='additive')
     p.add_argument('--data', default='./data')
     args = p.parse_args()
@@ -76,7 +80,8 @@ def main():
     cfg = METHODS[args.method]
     lr = args.lr if args.lr is not None else cfg['lr']
     _, trainset_plain, _ = get_datasets(args.data, augment=False)
-    model = build_model(cfg, args.seed, trainset_plain, noise_mode=args.noise, init_mode=args.init_mode)
+    model = build_model(cfg, args.seed, trainset_plain, noise_mode=args.noise, init_mode=args.init_mode,
+                        datadep_last_layer=(args.init_last_layer == 'data'))
 
     g = torch.Generator()
     g.manual_seed(12345)
@@ -84,7 +89,8 @@ def main():
     x, y = next(batches)
     x, y = x.to(device), y.to(device)
 
-    print(f'method={args.method} lr={lr:g} init_mode={args.init_mode} noise={args.noise} seed={args.seed}')
+    print(f'method={args.method} lr={lr:g} init_mode={args.init_mode} noise={args.noise} seed={args.seed} '
+          f'warmup={args.warmup_steps} last_layer_init={args.init_last_layer}')
     logits = print_layer_stats(model, x)
     print_gains(model)
     print(f'\ninitial loss on that batch: {F.cross_entropy(logits, y).item():.4f}  (chance level: 2.3026)')
@@ -98,6 +104,8 @@ def main():
         except StopIteration:
             break
         x, y = x.to(device), y.to(device)
+        for group in optimizer.param_groups:
+            group['lr'] = lr * warmup_factor(step - 1, args.warmup_steps)
         optimizer.zero_grad(set_to_none=True)
         loss = F.cross_entropy(model(x), y)
         loss.backward()
