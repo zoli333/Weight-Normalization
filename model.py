@@ -1,9 +1,7 @@
 # Import necessary libraries
 import torch
 import torch.nn as nn
-from layers import WeightNormLayer, MeanOnlyBatchNormLayer, GaussianNoiseLayer, NINLayer
-import copy
-
+from layers import WeightNormLayer, MeanOnlyBatchNormLayer, GaussianNoiseLayer, GlobalAvgPool2d, NINLayer
 
 #https://programming-review.com/pytorch/hooks
 #https://arxiv.org/pdf/1906.02341.pdf
@@ -11,35 +9,46 @@ import copy
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-layers = [
-    GaussianNoiseLayer(device),
-    nn.Conv2d(3, 96, kernel_size=3, padding=1),
-    nn.Conv2d(96, 96, kernel_size=3, padding=1),
-    nn.Conv2d(96, 96, kernel_size=3, padding=1),
+EPS = 1e-6  # guards the division by sigma in the data-dependent init (dead units)
 
-    nn.MaxPool2d(kernel_size=2, stride=2),
-    nn.Dropout(p=0.5),
+def make_layers(noise_mode='additive'):
+    """Fresh (uninitialized) layer list of the CIFAR-10 model of the paper (appendix)."""
+    return [
+        GaussianNoiseLayer(sigma=0.15, relative=(noise_mode == 'relative')),
+        nn.Conv2d(3, 96, kernel_size=3, padding=1),
+        nn.Conv2d(96, 96, kernel_size=3, padding=1),
+        nn.Conv2d(96, 96, kernel_size=3, padding=1),
 
-    nn.Conv2d(96, 192, kernel_size=3, padding=1),
-    nn.Conv2d(192, 192, kernel_size=3, padding=1),
-    nn.Conv2d(192, 192, kernel_size=3, padding=1),
+        nn.MaxPool2d(kernel_size=2, stride=2),
+        nn.Dropout(p=0.5),
 
-    nn.MaxPool2d(kernel_size=2, stride=2),
-    nn.Dropout(p=0.5),
+        nn.Conv2d(96, 192, kernel_size=3, padding=1),
+        nn.Conv2d(192, 192, kernel_size=3, padding=1),
+        nn.Conv2d(192, 192, kernel_size=3, padding=1),
 
-    nn.Conv2d(192, 192, kernel_size=3, padding=0),
-    NINLayer(192, 192),
-    NINLayer(192, 192),
+        nn.MaxPool2d(kernel_size=2, stride=2),
+        nn.Dropout(p=0.5),
 
-    nn.AdaptiveAvgPool2d((1, 1)),
-    nn.Flatten(),
-    nn.Linear(192, 10)
-]
+        nn.Conv2d(192, 192, kernel_size=3, padding=0),
+        NINLayer(192, 192),
+        NINLayer(192, 192),
+
+        GlobalAvgPool2d(),
+        nn.Linear(192, 10)
+    ]
+
+def _channel_stats(y):
+    """Per-output-unit mean and (biased) std of pre-activations, over batch and spatial dims."""
+    reduce_dims = [d for d in range(y.dim()) if d != 1]
+    shape = (1, y.size(1)) + (1,) * (y.dim() - 2)
+    mu = y.mean(dim=reduce_dims)
+    sigma = torch.sqrt(torch.square(y - mu.view(shape)).mean(dim=reduce_dims))
+    return mu, sigma.clamp_min(EPS)
 
 
 def data_dependent_weight_norm_g_init(wn_layer, sample_batch):
     """
-    Data-dependent init of WN's g, as in Salimans & Kingma 2016.
+    Data-dependent init of WN's g and bias, as in Salimans & Kingma 2016.
         1) Set g=1, so that w = v / ||v||
         2) Set b = 0
         3) Obtain pre-activations:  y = w * x + b = v * x / ||v||
@@ -49,25 +58,24 @@ def data_dependent_weight_norm_g_init(wn_layer, sample_batch):
         7) Return the layer and the pre-activations, so that we can propagate the batch to the next layer
     """
     with torch.no_grad():
-        wn_layer_module = wn_layer.module
+        root  = wn_layer.module
 
         # Set g=1
-        wn_layer_module.weight_g.uniform_(1, 1)
+        root.g.fill_(1.0)
 
         # Set b=0
-        wn_layer_module.bias.zero_()
+        root.bias.zero_()
 
         # Forward pass
         y = wn_layer(sample_batch)
 
         # Compute mean and std of pre-activations
-        out_size = y.size(1)
-        mu = torch.mean(y.swapaxes(1, 0).contiguous().view(out_size, -1), dim=-1)
-        sigma = torch.sqrt(torch.mean(torch.square(y.swapaxes(1, 0).contiguous().view(out_size, -1) - mu.unsqueeze(1)), dim=-1))
+        mu, sigma = _channel_stats(y)
 
         # Initialize parameters as in [Salimans & Kingma 2016] Eq (6)
-        wn_layer_module.weight_g = nn.Parameter((1. / sigma).view(wn_layer_module.weight_g.size()))
-        wn_layer_module.bias = nn.Parameter(-mu / sigma)
+        # Eq (6) of the paper; in-place copies keep the Parameter objects (and their registration) intact
+        root.g.copy_((1.0 / sigma).view_as(root.g))
+        root.bias.copy_(-mu / sigma)
 
         # Re-compute pre-activations with properly normalized layer
         output_norm = wn_layer(sample_batch)
@@ -76,38 +84,35 @@ def data_dependent_weight_norm_g_init(wn_layer, sample_batch):
 
 def data_dependent_mean_only_batch_norm_g_init(mn_bn_layer, sample_batch):
     """
-    Data-dependent init of WN's g, as in Salimans & Kingma 2016.
-        1) Set g=1, so that w = v / ||v||
-        2) Set b = 0
-        3) Obtain pre-activations:  y = w * x + b = v * x / ||v||
-        4) Compute mu, sigma = mean(y), std(y)
-        5) Initialize g = 1 / sigma, b = -mu / sigma
-        6) Re-compute pre-activations with properly normalized layer
-        7) Return the layer and the pre-activations, so that we can propagate the batch to the next layer
+    Data-dependent init of g for  MeanOnlyBatchNormLayer(WeightNormLayer(...)):
+        1) g = 1, bias = 0
+        2) y = v * x / ||v|| - mean(v * x / ||v||)        (the mean is removed by the layer itself)
+        3) g = 1 / std(y)
+        4) Re-compute the output and return it, so that the batch can be propagated to the next layer
+    The bias stays 0: the layer's mean subtraction already centers the output.
     """
     # mn_bn_layer -> MeanOnlyBatchNormLayer(WeightNormLayer((..nn.Conv2d..))
-    if isinstance(mn_bn_layer.module, (nn.Conv2d, nn.Linear, NINLayer)):
+    if not isinstance(mn_bn_layer.module, WeightNormLayer):
         raise ValueError('Unsupported module:', mn_bn_layer.module)
 
     with torch.no_grad():
-        mn_bn_layer_module = mn_bn_layer.module.module
+        root = mn_bn_layer.module.module
 
         # Set b=0
         mn_bn_layer.bias.zero_()
 
         # Set g=1
-        mn_bn_layer_module.weight_g.uniform_(1, 1)
+        root.g.fill_(1.0)
 
         # Forward pass
         # y = v*x/||v|| - mu (+ b)
         y = mn_bn_layer(sample_batch)
 
         # Compute std of pre-activations
-        out_size = y.size(1)
-        sigma = torch.sqrt(torch.mean(torch.square(y.swapaxes(1, 0).contiguous().view(out_size, -1)), dim=-1))
+        _, sigma = _channel_stats(y)
 
         # Initialize parameters as in [Salimans & Kingma 2016] Eq (6)
-        mn_bn_layer_module.weight_g = nn.Parameter((1. / sigma).view(mn_bn_layer_module.weight_g.size()))
+        root.g.copy_((1.0 / sigma).view_as(root.g))
 
         # Re-compute pre-activations with properly normalized layer
         output_norm = mn_bn_layer(sample_batch)
@@ -115,73 +120,99 @@ def data_dependent_mean_only_batch_norm_g_init(mn_bn_layer, sample_batch):
 
 
 def init_layer_maybe_normalize(layer, normalizer, init, sample_batch=None):
-    if init in ['gaussian', 'gaussian_datadep']:
-        torch.nn.init.normal_(layer.weight, 0.0, 0.05)
-        torch.nn.init.zeros_(layer.bias)
-    else:
+    if init not in ('gaussian', 'gaussian_datadep'):
         raise ValueError('Unsupported init:', init)
 
-    if sample_batch is not None:
-        sample_batch_ = sample_batch.detach().clone()
+    nn.init.normal_(layer.weight, 0.0, 0.05)
+    nn.init.zeros_(layer.bias)
 
-    if 'weight' in normalizer:
+    datadep = 'datadep' in init
+    use_wn = 'weight' in normalizer
+    use_mean_only_bn = 'mean_only_batch_norm' in normalizer
+    use_bn = 'batch_norm' in normalizer and not use_mean_only_bn
+
+    if datadep:
+        if sample_batch is None:
+            raise ValueError('Data-dependent init needs a sample batch.')
+        if not use_wn:
+            raise ValueError('Data-dependent init is only defined for weight normalized layers.')
+        sample_batch = sample_batch.detach().clone()
+
+    output = None  # pre-activations of the sample batch (only computed for data-dependent init)
+
+    if use_wn:
         layer = WeightNormLayer(layer).to(device)
+        # With mean-only BN the g-init is done below on the full (WN + mean-only BN) layer;
+        # doing the plain WN init first would be redundant, since it is overwritten.
+        if datadep and not use_mean_only_bn:
+            layer, output = data_dependent_weight_norm_g_init(layer, sample_batch)
 
-        if 'datadep' in init:
-            assert sample_batch_ is not None
-            layer, sample_batch = data_dependent_weight_norm_g_init(layer, sample_batch_)
-
-    if 'mean_only_batch_norm' in normalizer:
+    if use_mean_only_bn:
         layer = MeanOnlyBatchNormLayer(layer).to(device)
-
-        if 'datadep' in init:
-            assert sample_batch_ is not None
-            layer, sample_batch = data_dependent_mean_only_batch_norm_g_init(layer, sample_batch_)
-    elif 'batch_norm' in normalizer:
+        if datadep:
+            layer, output = data_dependent_mean_only_batch_norm_g_init(layer, sample_batch)
+    elif use_bn:
         num_outputs = layer.weight.size(0)
         if isinstance(layer, nn.Linear):
             layer = (layer, nn.BatchNorm1d(num_outputs))
         else:
             layer = (layer, nn.BatchNorm2d(num_outputs))
 
-    return layer, sample_batch
+    return layer, output
 
 
 class Model(nn.Module):
-    def __init__(self, normalizer='no_norm', init='gaussian', sample_batch=None):
+    """
+    normalizer: 'no_norm' | 'weight' | 'batch_norm' | 'weight_mean_only_batch_norm'
+    init:       'gaussian' | 'gaussian_datadep'  (data-dependent init needs sample_batch)
+    noise_mode: 'additive' (as in the paper) | 'relative' (the old behaviour of this repo)
+    init_mode:  'train' | 'eval' -- whether noise/dropout are active while the sample batch is propagated
+                through the net during the data-dependent init.
+    """
+
+    def __init__(self, normalizer='no_norm', init='gaussian', sample_batch=None,
+                 noise_mode='additive', init_mode='train'):
         super().__init__()
-        self.layers = []
-        layers_copy = copy.deepcopy(layers)
-        last_layer_index = len(layers_copy) - 1
+        if init_mode not in ('train', 'eval'):
+            raise ValueError('Unsupported init_mode:', init_mode)
 
-        for layer_idx, layer in enumerate(layers_copy):
+        layer_list = []
+        raw_layers = make_layers(noise_mode)
+        last_layer_index = len(raw_layers) - 1
+        x = sample_batch  # propagated through the net layer by layer (data-dependent init only)
+
+        for layer_idx, layer in enumerate(raw_layers):
             if isinstance(layer, (nn.Conv2d, nn.Linear, NINLayer)):
-                layer, sample_batch = init_layer_maybe_normalize(layer, normalizer, init, sample_batch)
+                layer, x_out = init_layer_maybe_normalize(layer, normalizer, init, x)
 
-                if type(layer) == tuple:
-                    [self.layers.append(l) for l in layer]
+                if isinstance(layer, tuple):
+                    layer_list.extend(layer)
                 else:
-                    self.layers.append(layer)
+                    layer_list.append(layer)
                 if layer_idx < last_layer_index:
                     leaky_relu = nn.LeakyReLU(negative_slope=0.1)
-                    self.layers.append(leaky_relu)
-                    if sample_batch is not None:
-                        sample_batch = leaky_relu(sample_batch)
+                    layer_list.append(leaky_relu)
+                    if x_out is not None:
+                        x_out = leaky_relu(x_out)
+                x = x_out
             else:
-                self.layers.append(layer)
-                if sample_batch is not None:
-                    sample_batch = layer(sample_batch)
+                layer_list.append(layer)
+                if x is not None:
+                    was_training = layer.training
+                    if init_mode == 'eval':
+                        layer.eval()
+                    x = layer(x)
+                    layer.train(was_training)
 
-        self.model = nn.Sequential(*self.layers)
+        self.model = nn.Sequential(*layer_list)
+
+        # the init forward passes ran in training mode and updated the running means -> start from zero
+        for m in self.modules():
+            if isinstance(m, MeanOnlyBatchNormLayer):
+                m.reset_running_stats()
 
     def forward(self, x):
         return self.model(x)
-
-
-if __name__ == '__main__':
-    x = torch.randint(0, 255, size=(1,3,32,32)).float()
-    y = (-127.5 + x) / 128.
-    print(torch.min(y), torch.max(y))
 
 
 

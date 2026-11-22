@@ -1,1 +1,7 @@
 data/
+.venv/
+results/
+__pycache__/
+.idea/
+*.pt
+*.zip
