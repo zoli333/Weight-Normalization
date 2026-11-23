@@ -20,9 +20,10 @@ from torch.utils.data import DataLoader
 
 from model import Model, device
 
-# name -> configuration. lr: 0.003 for everything, except the un-normalized reference net (unstable at 0.003).
+# name -> configuration. lr: 0.003 for everything, except the un-normalized reference net, which gets 0.001:
+# at 0.0003 it under-fitted (86.5% test acc. vs 88.8% at 0.001, see README). Whether it is stable at 0.003 was not tested.
 METHODS = {
-    'no_norm': dict(normalizer='no_norm', init='gaussian', lr=0.0003, sample_batch_size=0),
+    'no_norm': dict(normalizer='no_norm', init='gaussian', lr=0.001, sample_batch_size=0),
     'weight_norm': dict(normalizer='weight', init='gaussian', lr=0.003, sample_batch_size=0),
     'weight_norm_with_init': dict(normalizer='weight', init='gaussian_datadep', lr=0.003, sample_batch_size=500),
     'batch_norm': dict(normalizer='batch_norm', init='gaussian', lr=0.003, sample_batch_size=0),
@@ -122,10 +123,33 @@ def evaluate(model, loader):
     return loss_sum / total, 100.0 * correct / total
 
 
+def run_tag(args):
+    """Suffix for the run directory: every non-default setting that changes the result is encoded in the name,
+    so runs made with different settings can share one --out directory without overwriting / skipping each other."""
+    tags = []
+    if args.warmup_steps > 0:
+        tags.append(f'wu{args.warmup_steps}')
+    if args.init_last_layer != 'data':
+        tags.append('lastplain')
+    if args.noise != 'additive':
+        tags.append('relnoise')
+    if args.init_mode != 'train':
+        tags.append('initeval')
+    if args.no_augment:
+        tags.append('noaug')
+    if args.lr_decay != 'linear':
+        tags.append('nodecay')
+    if args.decay_start is not None:
+        tags.append(f'ds{args.decay_start}')
+    if args.epochs != 100:
+        tags.append(f'ep{args.epochs}')
+    return ''.join('__' + t for t in tags)
+
+
 def run_experiment(name, cfg, seed, args, datasets):
     trainset, trainset_plain, testset = datasets
     lr = args.lr if args.lr is not None else cfg['lr']
-    run_dir = Path(args.out) / f'{name}__lr{lr:g}' / f'seed{seed}'
+    run_dir = Path(args.out) / f'{name}__lr{lr:g}{run_tag(args)}' / f'seed{seed}'
     if (run_dir / 'DONE').exists() and not args.force:
         print(f'[skip] {run_dir} is already done (use --force to rerun)')
         return
@@ -245,3 +269,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
